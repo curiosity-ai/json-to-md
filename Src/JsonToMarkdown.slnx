@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="JsonToMarkdown.Tests/JsonToMarkdown.Tests.csproj" />
+  <Project Path="JsonToMarkdown/JsonToMarkdown.csproj" />
+</Solution>

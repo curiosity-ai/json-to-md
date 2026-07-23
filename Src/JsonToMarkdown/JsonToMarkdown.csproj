@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Platforms>AnyCPU</Platforms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <Company>Curiosity GmbH</Company>
+    <Authors>Curiosity GmbH; ported from json-to-md by Raj Nandan Sharma</Authors>
+    <Product>JsonToMarkdown</Product>
+    <PackageId>JsonToMarkdown</PackageId>
+    <Description>Convert one JSON document into deterministic, human-readable GitHub Flavored Markdown. A C#/.NET 10 port of json-to-md, producing byte-identical output to the reference TypeScript and Go implementations.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>(c) Copyright 2026 Curiosity GmbH; (c) Raj Nandan Sharma (original json-to-md)</Copyright>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageProjectUrl>https://github.com/curiosity-ai/json-to-md</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/curiosity-ai/json-to-md</RepositoryUrl>
+    <PackageTags>json;markdown;gfm;converter;llm;tokens</PackageTags>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

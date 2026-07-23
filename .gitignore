@@ -153,3 +153,9 @@ skills-lock.json
 # Project-local context/docs
 CONTEXT.md
 docs/adr/
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+*.user
+*.nupkg
+*.snupkg

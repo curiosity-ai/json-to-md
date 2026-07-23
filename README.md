@@ -1,57 +1,31 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-white.svg">
-  <img src="assets/logo.svg" alt="json-to-md logo" width="96">
-</picture>
-
-# json-to-md
+# JsonToMarkdown
 
 Convert one JSON document into deterministic, human-readable [GitHub Flavored Markdown](https://github.github.com/gfm/).
 
-The same conversion runs in the browser, in Node, in Go, and on the command line. The TypeScript and Go implementations produce **byte-identical output**, enforced by a shared [`corpus/`](corpus/) and a cross-implementation fuzz gate in CI. Output is a readable **projection** rather than a reversible serialization format. Every document begins with a `# Results` heading and uses canonical spacing: LF endings, one blank line between blocks, no trailing spaces, one final newline.
+A modern **C# / .NET 10** port of [`json-to-md`](https://github.com/rajnandan1/json-to-md). The conversion core produces **byte-identical output** to the reference TypeScript and Go implementations — verified against the shared [`corpus/`](corpus/) fixtures on every build. Output is a readable **projection** rather than a reversible serialization format. Every document begins with a `# Results` heading and uses canonical spacing: LF endings, one blank line between blocks, no trailing spaces, one final newline.
 
-## Motivation
+## Why convert JSON to Markdown?
 
-If you feed JSON into an LLM, you pay for its punctuation. Every `{`, `}`, `"`,
-`:`, and `,` is tokens spent on structure the model does not need to read the
-data. Converting the same document to Markdown headings and lists is measurably
-cheaper and easier for models to follow:
+If you feed JSON into an LLM, you pay for its punctuation. Every `{`, `}`, `"`, `:`, and `,` is tokens spent on structure the model does not need to read the data. Converting the same document to Markdown headings, lists, and tables is measurably cheaper, tokenizes more efficiently, and stays human-readable in prompts, agent memory, and RAG context.
 
-- **Fewer tokens.** A [tiktoken measurement][md-tokens] of one real document
-  came out to 13,869 tokens as JSON versus 11,612 as Markdown — about 16% less.
-  Reports in the wild put the JSON tax anywhere from [15–20%][md-reddit] up to 2x
-  depending on how nested and quote-heavy the data is.
-- **Native format.** Markdown is the lingua franca of LLM training corpora, so
-  it tends to tokenize efficiently and models parse its structure reliably.
-- **Human-readable in the loop.** Prompts, agent memory logs, and RAG context
-  are easier to read, diff, and hand-edit as Markdown than as escaped JSON — and
-  Markdown chunks concatenate cleanly, where stringified JSON does not.
-- **Fits tighter context windows.** In IDE assistants and agent loops where
-  context is aggressively trimmed, token-heavy JSON is a real risk; a leaner
-  projection leaves more room for the actual task.
+The tradeoff: this is a one-way, human-facing **projection**, not a reversible serialization. When a downstream step must parse, validate, or store the data, keep the JSON.
 
-The tradeoff: this is a one-way, human-facing **projection**, not a reversible
-serialization. When a downstream step must parse, validate, or store the data,
-keep the JSON. A common pattern is JSON for the machine contract and Markdown
-for everything a model or a person has to read.
-
-
-## Node
-
-### Install
+## Install
 
 ```sh
-npm install @rajnandan1/json-to-md      # or: pnpm add / yarn add
+dotnet add package JsonToMarkdown
 ```
 
-Ships ESM and CommonJS builds with TypeScript declarations, and no runtime dependencies. Node ≥ 18.
+Targets .NET 10. No third-party runtime dependencies (uses `System.Text.Json`).
 
-### Use
+## Use
 
-```ts
-import { convertJsonText, convertJsonValue } from "@rajnandan1/json-to-md";
+```csharp
+using JsonToMarkdown;
 
-convertJsonText('{ "hello": "world" }'); // untrusted serialized JSON text
-convertJsonValue({ hello: "world" }); // already-parsed, caller-trusted data
+// Untrusted serialized JSON text — byte-identical to the reference implementations.
+string md = JsonMarkdown.ConvertText("""{ "hello": "world" }""");
+
 // # Results
 //
 // ## hello
@@ -59,136 +33,54 @@ convertJsonValue({ hello: "world" }); // already-parsed, caller-trusted data
 // world
 ```
 
-CommonJS works too: `const { convertJsonText } = require("@rajnandan1/json-to-md")`. See the [API reference](#api-reference) for the two entry points' exact contracts and errors.
+There are two entry points, plus a typed exception. All conversions are pure, never mutate their input, share no state, and are safe to run concurrently.
 
-## Browser
+### `JsonMarkdown.ConvertText(string source)`
 
-### Install
+Accepts untrusted **serialized** JSON text. A dedicated parser reads it without executing caller code and preserves each number's original spelling, object-member order, and array order. It rejects duplicate member names and reports UTF-16 source locations. This is the byte-identical parity path.
 
-The same package: bundle it (Vite, webpack, esbuild; it's plain ESM with no dependencies), or skip the build step entirely. Every npm release lands on the CDNs, and the build is a single self-contained ES module, so the raw file imports directly:
-
-```html
-<script type="module">
-    import { convertJsonText } from "https://cdn.jsdelivr.net/npm/@rajnandan1/json-to-md@1/dist/index.js";
-    document.body.textContent = convertJsonText('{"hello":"world"}');
-</script>
+```csharp
+JsonMarkdown.ConvertText("9007199254740993"); // preserved exactly
+JsonMarkdown.ConvertText("1.00");              // "1.00" (lexeme preserved)
 ```
 
-(`@1` floats on the latest 1.x; pin `@1.0.1` for exact bytes. The same path works on unpkg at `https://unpkg.com/@rajnandan1/json-to-md@1.0.1/dist/index.js`, or via esm.sh as `https://esm.sh/@rajnandan1/json-to-md`.)
+### `JsonMarkdown.ConvertValue(...)` — the System.Text.Json path
 
-No modules? A classic script tag works too; the IIFE build exposes a `jsonToMd` global. Pin it with [Subresource Integrity](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) so a compromised CDN can't swap the code (the hash is per-version, so update both together when bumping):
+Accepts an already-parsed `System.Text.Json` object model. Overloads take a
+[`JsonNode`](https://learn.microsoft.com/dotnet/api/system.text.json.nodes.jsonnode) or a
+[`JsonElement`](https://learn.microsoft.com/dotnet/api/system.text.json.jsonelement).
+Because `System.Text.Json` preserves the raw numeric token, numbers keep their original spelling here too.
 
-```html
-<script
-    src="https://cdn.jsdelivr.net/npm/@rajnandan1/json-to-md@1.0.1/dist/index.global.js"
-    integrity="sha384-v5+v71wtLTKJo2nT4Ly2Ov4u1QDPPPC0fhwy1q9I8lqsEtDOIuH/4AIwyt9lRQmR"
-    crossorigin="anonymous"
-></script>
-<script>
-    document.body.textContent = jsonToMd.convertJsonText('{"hello":"world"}');
-</script>
-```
+```csharp
+using System.Text.Json.Nodes;
 
-### Use
+JsonNode? node = JsonNode.Parse("""{ "hello": "world" }""");
+string md = JsonMarkdown.ConvertValue(node);
 
-Identical API to Node; the conversion core is pure and runs anywhere. A live playground lives in [`demo/`](https://json-to-md.rajnandan.com/demo/), a fully static page that loads the released library from the CDN, so any static file server works:
-
-```sh
-pnpm demo   # serves it via vite and prints a localhost URL
-```
-
-Paste JSON, watch it convert, toggle between the rendered preview and raw Markdown, and switch the input between the serialized and parsed entry points to see numeric spelling preserved or lost.
-
-## Go
-
-### Install
-
-```sh
-go get github.com/rajnandan1/json-to-md/go
-```
-
-### Use
-
-```go
-import (
-	"errors"
-
-	jsontomd "github.com/rajnandan1/json-to-md/go"
-)
-
-md, err := jsontomd.ConvertText([]byte(`{"hello":"world"}`)) // byte-identical to convertJsonText
-md, err = jsontomd.ConvertValue(v)                           // any Go value, marshal-then-convert
-
-var convErr *jsontomd.Error
-if errors.As(err, &convErr) {
-	// convErr.Code, .Pointer, .Location: same codes and UTF-16 locations as the TS errors
-}
-```
-
-`ConvertText` preserves member order and numeric lexemes just like `convertJsonText`. `ConvertValue` is defined as `json.Marshal(v)` piped into the same core: struct fields render in field order, map keys in sorted order, and the core rejects cycles or NaN. The library packages are dependency-free.
-
-## CLI
-
-### Install
-
-```sh
-brew tap rajnandan1/homebrew-rajnandan
-brew trust rajnandan1/rajnandan     # once per machine; newer Homebrew gates third-party taps
-brew install json-to-md
-# or, via the Go toolchain:
-go install github.com/rajnandan1/json-to-md/go/cmd/json-to-md@latest
-```
-
-### Use
-
-```sh
-json-to-md data.json > out.md                       # file in, Markdown out
-curl -s https://api.example.com/items | json-to-md  # stdin (no arg, or '-')
-json-to-md --json broken.json 2> error.json         # structured errors on stderr
-json-to-md --version
-```
-
-Exit codes: `0` success, `1` conversion failed, `2` usage or I/O error. Failures print one greppable line (`json-to-md: DUPLICATE_MEMBER_NAME at 3:7 (first at 1:9): …`), or with `--json` the full error object (`code`, `pointer`, `location`, `firstLocation`, `message`).
-
-## API reference
-
-There are two entry points, one for already-parsed data and one for untrusted JSON text, plus a typed error. Both functions return the complete Markdown string or throw `JsonToMarkdownError`. Calls are pure, never mutate input, share no state, and are safe to run concurrently.
-
-Go mirrors these contracts one-for-one: `ConvertText` ↔ `convertJsonText` (byte-identical output), `ConvertValue` ↔ `convertJsonValue` (host-language marshaling semantics), and `*jsontomd.Error` ↔ `JsonToMarkdownError`, with the same codes, JSON Pointers, and UTF-16 locations (`SPARSE_ARRAY` cannot occur in Go).
-
-### `convertJsonValue(value: unknown): string`
-
-Accepts caller-trusted, already-parsed JSON data and validates it at runtime. Rejects anything that is not JSON-compatible: cycles, sparse arrays, `undefined`, `BigInt`, `NaN`/`Infinity`, functions, symbols, `Date`/`Map`/`Set`, and class instances. It never invokes getters, so it cannot detect a hostile `Proxy`; put untrusted content in `convertJsonText`.
-
-### `convertJsonText(source: string): string`
-
-Accepts untrusted **serialized** JSON, parses it without executing caller code, and preserves each number's original spelling. It keeps object-member order, array order, and numeric tokens intact.
-
-```ts
-convertJsonText("9007199254740993"); // "…\n\n9007199254740993\n"  (preserved)
-convertJsonValue(9007199254740993); // "…\n\n9007199254740992\n"  (already rounded by JS)
-
-convertJsonText("1.00"); // "1.00"
-convertJsonValue(1.0); // "1"
+// Convenience: read a JSON object from a string with System.Text.Json, then convert.
+string md2 = JsonMarkdown.ConvertValueFromText("""{ "hello": "world" }""");
 ```
 
 ### Errors
 
-```ts
-try {
-    convertJsonText('{"name":"a","name":"b"}');
-} catch (e) {
-    if (e instanceof JsonToMarkdownError) {
-        e.code; // "DUPLICATE_MEMBER_NAME"
-        e.message; // human-readable
-        e.location; // { offset, line, column } for serialized syntax failures
-        e.firstLocation; // first occurrence, for duplicate member names
-        e.pointer; // JSON Pointer, when the invalid value is locatable
-    }
+Conversion fails atomically at the first error in encounter order and never returns partial Markdown, throwing `JsonToMarkdownException`:
+
+```csharp
+try
+{
+    JsonMarkdown.ConvertText("""{"name":"a","name":"b"}""");
+}
+catch (JsonToMarkdownException e)
+{
+    e.Code;          // JsonToMarkdownErrorCode.DuplicateMemberName
+    e.Message;       // human-readable
+    e.Location;      // { Offset, Line, Column } for serialized syntax failures (UTF-16 units)
+    e.FirstLocation; // first occurrence, for duplicate member names
+    e.Pointer;       // JSON Pointer, when the invalid value is locatable
 }
 ```
 
-Conversion fails atomically at the first error in encounter order and never returns partial Markdown. Codes: `INVALID_JSON_SYNTAX`, `DUPLICATE_MEMBER_NAME`, `INVALID_PARSED_VALUE`, `CYCLIC_REFERENCE`, `SPARSE_ARRAY`.
+Codes: `InvalidJsonSyntax`, `DuplicateMemberName`, `InvalidParsedValue`, `CyclicReference`, `SparseArray` (the last cannot occur from `System.Text.Json` input).
 
 ## How values render
 
@@ -202,12 +94,8 @@ Conversion fails atomically at the first error in encounter order and never retu
 | Whole-string absolute `http(s)` URL | Markdown link                                                                                      |
 | `null` / `""` / `[]` / `{}`         | `` `null` `` / `` `""` `` / `` `[]` `` / `` `{}` `` (each kept distinct from a missing table cell) |
 
-```ts
-convertJsonText(
-    JSON.stringify({
-        table1: [{ age: 14, degrees: [{ name: "B-Degree", year: "2023" }] }],
-    }),
-);
+```csharp
+JsonMarkdown.ConvertText("""{"table1":[{"age":14,"degrees":[{"name":"B-Degree","year":"2023"}]}]}""");
 ```
 
 ```markdown
@@ -230,32 +118,27 @@ convertJsonText(
 
 There is no converter-defined input-size, nesting-depth, or table-size limit; parsing, validation, and rendering are iterative, so deeply nested documents do not overflow the stack.
 
-## Benchmarks
+## Design notes
 
-Measured on Stripe's OpenAPI spec ([spec3.json](https://github.com/stripe/openapi/blob/master/openapi/spec3.json): 7.5 MiB of JSON in, 6.1 MiB of Markdown out), Apple M3 Pro, 2026-07. Both implementations produced **byte-identical output** for this document (sha256-verified). The corpus promise holds on real-world data.
+- **UTF-16 fidelity.** The reference implementation operates on UTF-16 code units, and so does this port — C# `char`/`string` are UTF-16, so source offsets, escaping, and surrogate handling map directly, keeping output byte-identical.
+- **Heading anchors.** Detail-section links reproduce [`github-slugger`](https://github.com/Flet/github-slugger) exactly, including JS-style `toLowerCase` with the Unicode Final_Sigma rule and the code-point strip table (see `SlugRanges.cs`, generated from the reference Go data).
+- **Numeric lexemes.** Both entry points preserve a number's original token (`1.00`, `2E+3`, `9007199254740993`) rather than round-tripping through a floating-point value.
 
-| Surface                                                  | Median  | Input throughput |
-| -------------------------------------------------------- | ------- | ---------------- |
-| Go `ConvertText`                                         | 128 ms  | ~59 MiB/s        |
-| TypeScript `convertJsonText` (Node 24)                   | 211 ms  | ~36 MiB/s        |
-| CLI `json-to-md spec3.json` (whole process, brew binary) | ~120 ms | —                |
+## Repository layout
 
-Reproduce with any large JSON document:
-
-```sh
-pnpm build && node scripts/bench-file.mjs path/to/big.json
-cd go && BENCH_FILE=path/to/big.json go test -bench ConvertTextFile -run '^$'
-```
+- `Src/JsonToMarkdown/` — the library.
+- `Src/JsonToMarkdown.Tests/` — MSTest suite: the shared parity `corpus/`, plus [Markdig](https://github.com/xoofx/markdig)-based checks that the output is valid GFM.
+- `corpus/` — the byte-identical contract of record, shared with the reference implementations.
+- `reference/` — the original TypeScript and Go sources, kept for reference.
+- `.devops/build-nuget.yml` — Azure DevOps pipeline that packs and publishes the NuGet package.
 
 ## Development
 
 ```sh
-pnpm build       # ESM + CJS + type declarations (tsup)
-pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest run
-pnpm bench       # 10 MiB conversion benchmarks
+dotnet build  Src/JsonToMarkdown.sln -c Release
+dotnet test   Src/JsonToMarkdown.sln -c Release
 ```
 
 ## License
 
-MIT
+MIT. Ported from [`json-to-md`](https://github.com/rajnandan1/json-to-md) by Raj Nandan Sharma (MIT).
